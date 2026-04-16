@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Generator
 
 # ── Safety Sandbox ─────────────────────────────────────────────────────────────
-OUTPUT_DIR = Path(__file__).parent.parent / "output"
+OUTPUT_DIR = Path(__file__).resolve().parent.parent / "output"
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 

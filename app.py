@@ -144,6 +144,8 @@ if "stt_engine" not in st.session_state:
     st.session_state.stt_engine = None          # lazy-loaded on first use
 if "pipeline_result" not in st.session_state:
     st.session_state.pipeline_result = None     # last run's full output
+if "pending_confirmation" not in st.session_state:
+    st.session_state.pending_confirmation = False
 
 memory: SessionMemory = st.session_state.memory
 
@@ -174,6 +176,42 @@ def intent_badge(intent: str) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 # Helper: run full pipeline
 # ─────────────────────────────────────────────────────────────────────────────
+def execute_tool_action(bundle, agent_model, memory):
+    """Executes the tool part of the pipeline (Step 5)."""
+    intent = bundle["intent"]
+    params = bundle["params"]
+    transcription = bundle["transcription"]
+    
+    agents = AGENTS(model=agent_model)
+    
+    if intent == "chat":
+        # Note: Streaming in a sub-function like this is tricky in Streamlit,
+        # but for non-chat tools it's straightforward.
+        # Chat is handled directly in run_pipeline for streaming.
+        pass 
+    else:
+        with st.status(f"⚙️ Executing {intent}…", expanded=True) as s:
+            tool_result = agents.run(intent, params)
+            bundle["result"] = tool_result
+            s.update(
+                label=f"{'✅' if tool_result['status']=='success' else '❌'} {tool_result['message']}",
+                state="complete" if tool_result["status"] == "success" else "error",
+            )
+        
+        # Log and update memory
+        memory.add_user_message(transcription)
+        memory.add_assistant_message(tool_result.get("message", ""))
+        memory.log_action(
+            transcription=transcription,
+            intent=intent,
+            params=params,
+            result=bundle.get("result", {}),
+        )
+        
+    st.session_state.pipeline_result = bundle
+    st.session_state.pending_confirmation = False
+
+
 def run_pipeline(audio_bytes: bytes, sup_model: str, agent_model: str, human_confirm: bool):
     result_bundle = {}
 
@@ -192,7 +230,6 @@ def run_pipeline(audio_bytes: bytes, sup_model: str, agent_model: str, human_con
             progress_bar = st.progress(0.0)
             status_text = st.empty()
             
-            # Duration is in seconds
             duration = info.duration
             processed_time = 0
             
@@ -226,25 +263,16 @@ def run_pipeline(audio_bytes: bytes, sup_model: str, agent_model: str, human_con
         result_bundle["intent"] = intent
         result_bundle["params"] = params
 
-        # 4. Human-in-the-Loop (optional)
+        # 4. Check for Confirmation
         if human_confirm and intent in ("create_file", "write_code"):
-            st.warning(
-                f"⚠️ **Confirm action:** The agent wants to **{intent}**\n\n"
-                f"Params: `{params}`"
-            )
-            col1, col2 = st.columns(2)
-            confirmed = col1.button("✅ Allow", key="confirm_yes")
-            cancelled = col2.button("❌ Cancel", key="confirm_no")
-            if cancelled:
-                st.info("Action cancelled by user.")
-                return
-            if not confirmed:
-                st.stop()  # wait for user to click
+            st.session_state.pending_confirmation = True
+            st.session_state.pipeline_result = result_bundle
+            return
 
-        # 5. Tool Execution
-        agents = AGENTS(model=agent_model)
+        # 5. Tool Execution (Directly if no confirmation needed or if it's chat)
         if intent == "chat":
-            with st.status("💬 Generating response…", expanded=False) as s:
+            with st.status("💬 Generating response…", expanded=True) as s:
+                agents = AGENTS(model=agent_model)
                 history = memory.get_history()
                 stream  = agents.run(intent, params, history=history)
                 full_reply = ""
@@ -260,30 +288,20 @@ def run_pipeline(audio_bytes: bytes, sup_model: str, agent_model: str, human_con
                 memory.add_user_message(transcription)
                 memory.add_assistant_message(full_reply)
                 s.update(label="✅ Response ready", state="complete")
+            
+            memory.log_action(
+                transcription=transcription,
+                intent=intent,
+                params=params,
+                result=result_bundle.get("result", {}),
+            )
+            st.session_state.pipeline_result = result_bundle
         else:
-            with st.status(f"⚙️ Executing {intent}…", expanded=False) as s:
-                tool_result = agents.run(intent, params)
-                result_bundle["result"] = tool_result
-                s.update(
-                    label=f"{'✅' if tool_result['status']=='success' else '❌'} {tool_result['message']}",
-                    state="complete" if tool_result["status"] == "success" else "error",
-                )
-            # Also add to chat memory context
-            memory.add_user_message(transcription)
-            memory.add_assistant_message(tool_result.get("message", ""))
-
-        # 6. Log the action
-        memory.log_action(
-            transcription=transcription,
-            intent=intent,
-            params=params,
-            result=result_bundle.get("result", {}),
-        )
-
-        st.session_state.pipeline_result = result_bundle
+            execute_tool_action(result_bundle, agent_model, memory)
 
     finally:
-        os.unlink(tmp_path)
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -453,38 +471,49 @@ with tab_result:
             unsafe_allow_html=True,
         )
 
-        # Result
-        result = pr.get("result", {})
-        status_icon = "✅" if result.get("status") == "success" else "❌"
-        action = result.get("action", intent)
-
-        st.markdown(
-            f'<div class="card">'
-            f'<div class="card-title">⚙️ Action Taken &nbsp; {status_icon} {action}</div>'
-            f'<div class="card-body">{result.get("message","")}</div>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
-
-        # Extra output depending on action type
-        if action == "write_code" and result.get("code"):
-            st.markdown(
-                f'<div class="card-title" style="margin-top:.5rem;">Generated Code</div>'
-                f'<div class="code-block">{result["code"]}</div>',
-                unsafe_allow_html=True,
+        # Handle Confirmation UI if pending
+        if st.session_state.pending_confirmation:
+            st.warning(
+                f"⚠️ **Action required:** The agent is waiting for your permission to execute the **{intent}** tool."
             )
+            c1, c2 = st.columns(2)
+            if c1.button("✅ Allow and Execute", key="final_confirm", use_container_width=True):
+                execute_tool_action(pr, st.session_state.agent_model, memory)
+                st.rerun()
+            if c2.button("❌ Cancel Action", key="final_cancel", use_container_width=True):
+                st.session_state.pending_confirmation = False
+                st.session_state.pipeline_result = None
+                st.rerun()
+        else:
+            # Result
+            result = pr.get("result", {})
+            status_icon = "✅" if result.get("status") == "success" else "❌"
+            action = result.get("action", intent)
 
-        elif action == "summarize" and result.get("summary"):
             st.markdown(
                 f'<div class="card">'
-                f'<div class="card-title">📝 Summary</div>'
-                f'<div class="card-body">{result["summary"]}</div>'
+                f'<div class="card-title">⚙️ Action Taken &nbsp; {status_icon} {action}</div>'
+                f'<div class="card-body">{result.get("message","")}</div>'
                 f'</div>',
                 unsafe_allow_html=True,
             )
 
-        elif action == "chat" and result.get("reply"):
-            pass  # Already rendered inline during streaming
+            # Extra output depending on action type
+            if action == "write_code" and result.get("code"):
+                st.markdown(
+                    f'<div class="card-title" style="margin-top:.5rem;">Generated Code</div>'
+                    f'<div class="code-block">{result["code"]}</div>',
+                    unsafe_allow_html=True,
+                )
+
+            elif action == "summarize" and result.get("summary"):
+                st.markdown(
+                    f'<div class="card">'
+                    f'<div class="card-title">📝 Summary</div>'
+                    f'<div class="card-body">{result["summary"]}</div>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
 
 # ── Tab 3: Action Log ──────────────────────────────────────────────────────
 with tab_log:
