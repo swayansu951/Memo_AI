@@ -7,7 +7,7 @@ from typing import Generator
 class AGENTS:
     """Specialized agents that execute tasks based on classified intent."""
 
-    def __init__(self, model: str = 'llama3-abliterated:latest'):
+    def __init__(self, model: str = 'llama3.2:3b'):
         self.model = model
 
     def file_agent(self, params: dict) -> dict:
@@ -107,7 +107,7 @@ User: "What is machine learning?"
         response = ollama.chat(
             model=model,
             stream=True,
-            options={"num_ctx": 4097, "num_thread": 4, "keep_alive": "2m"},
+            options={"num_ctx": 4097,"num_gpu": 0, "num_thread": 8, "keep_alive": 30},
             messages=self.message,
         )
         for chunk in response:

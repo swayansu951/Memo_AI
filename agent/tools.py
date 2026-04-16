@@ -54,7 +54,7 @@ def create_file(filename: str, content: str = "") -> dict:
 def write_code(
     filename: str,
     description: str,
-    model: str = 'llama3-abliterated:latest',
+    model: str = 'llama3.2:3b',
 ) -> dict:
     """Generate code from a description using the LLM and save it to output/.
 
@@ -103,7 +103,7 @@ def write_code(
 
 
 # ── Tool: Summarize ────────────────────────────────────────────────────────────
-def summarize(text: str, model: str = 'llama3-abliterated:latest') -> dict:
+def summarize(text: str, model: str = 'llama3.2:3b') -> dict:
     """Summarize the provided text using the LLM.
 
     Args:
@@ -146,7 +146,7 @@ def summarize(text: str, model: str = 'llama3-abliterated:latest') -> dict:
 def chat(
     message: str,
     history: list = [],
-    model: str = 'llama3-abliterated:latest',
+    model: str = 'llama3.2:3b',
 ) -> Generator[str, None, None]:
     """Stream a general chat response, including conversation history.
 
