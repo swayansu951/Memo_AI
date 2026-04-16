@@ -300,7 +300,7 @@ with st.sidebar:
     agent_model = st.selectbox(
         label="agent_model",
         options=[
-            "llama3-abliterated:latest",
+            "llama3.2:3b",
             "llama3:latest",
             "mistral:latest",
             "codellama:latest",
