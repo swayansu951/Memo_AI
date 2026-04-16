@@ -278,7 +278,7 @@ with st.sidebar:
     st.markdown("**Whisper Model Path**")
     whisper_path = st.text_input(
         label="whisper_path",
-        value="./whisper_model",
+        value="base",
         label_visibility="collapsed",
         key="whisper_model_path",
     )
