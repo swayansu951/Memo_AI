@@ -60,40 +60,49 @@ class AGENTS:
 class SUPERVISOR:
     """Routes user text to the right agent by classifying intent via an LLM."""
 
-    SYSTEM_PROMPT = """You are a routing supervisor. Analyze the user's message and classify it into ONE intent.
+    SYSTEM_PROMPT = """You are a routing supervisor. Analyze the user's message and determine if it contains one or more tasks.
+If there are multiple tasks (e.g., "Summarize this text and save it to a file"), you must identify all of them.
 
 Available intents:
-- "create_file"  → user wants to create a blank or simple text file / folder
+- "create_file"  → user wants to create a text file / folder
 - "write_code"   → user wants code generated and saved to a file
 - "summarize"    → user wants content or text summarized
-- "chat"         → general question, conversation, or anything else
+- "chat"         → general question or conversation
 
-Respond ONLY with a single valid JSON object. No markdown, no explanation — pure JSON.
+Respond ONLY with a valid JSON object. No explanation.
 
 JSON schema:
 {
-  "intent": "<one of the four intents above>",
-  "params": {<intent-specific fields>}
+  "intents": [
+    {
+      "intent": "<intent_name>",
+      "params": {<intent-specific fields>}
+    },
+    ...
+  ]
 }
 
 Params per intent:
-- create_file : {"filename": "...", "content": ""}
-- write_code  : {"filename": "...", "description": "...what to code..."}
-- summarize   : {"text": "...text to summarize..."}
-- chat        : {"message": "...user's full message..."}
+- create_file : {"filename": "...", "content": "..."}
+- write_code  : {"filename": "...", "description": "..."}
+- summarize   : {"text": "..."}
+- chat        : {"message": "..."}
 
 Examples:
-User: "Create a Python file with a retry function"
-→ {"intent":"write_code","params":{"filename":"retry.py","description":"Python function that retries a failed operation with exponential backoff"}}
+User: "Summarize this: [...] and save it to results.txt"
+→ {
+    "intents": [
+      {"intent": "summarize", "params": {"text": "[...]"}},
+      {"intent": "create_file", "params": {"filename": "results.txt", "content": "SUMMARY_PLACEHOLDER"}}
+    ]
+  }
 
-User: "Make a new file called notes.txt"
-→ {"intent":"create_file","params":{"filename":"notes.txt","content":""}}
-
-User: "Summarize this: The quick brown fox jumps over the lazy dog"
-→ {"intent":"summarize","params":{"text":"The quick brown fox jumps over the lazy dog"}}
-
-User: "What is machine learning?"
-→ {"intent":"chat","params":{"message":"What is machine learning?"}}
+User: "What is AI?"
+→ {
+    "intents": [
+      {"intent": "chat", "params": {"message": "What is AI?"}}
+    ]
+  }
 """
 
     def __init__(self, user_message: str):
@@ -116,30 +125,35 @@ User: "What is machine learning?"
     def classify(self, model: str = 'llama3.1:8b-instruct-q5_K_S') -> dict:
         """Collect the full streamed response and parse it as a JSON intent dict.
 
-        Returns a dict like: {"intent": "write_code", "params": {...}}
-        Falls back to {"intent": "chat", ...} on any parse failure.
+        Returns a dict like: {"intents": [{"intent": "...", "params": {...}}, ...]}
+        Falls back to {"intents": [{"intent": "chat", ...}]} on failure.
         """
         full_text = "".join(self.main_agent(model=model))
 
-        # Strip markdown code fences if the LLM wraps its JSON
         cleaned = re.sub(r"```(?:json)?", "", full_text).strip().rstrip("```").strip()
 
-        # Attempt direct JSON parse
         try:
-            return json.loads(cleaned)
+            parsed = json.loads(cleaned)
+            if "intents" in parsed:
+                return parsed
+            # Handle legacy single-intent format just in case
+            if "intent" in parsed:
+                return {"intents": [parsed]}
         except json.JSONDecodeError:
             pass
 
-        # Fallback: extract the first {...} block found in the response
         match = re.search(r'\{.*\}', cleaned, re.DOTALL)
         if match:
             try:
-                return json.loads(match.group())
+                parsed = json.loads(match.group())
+                if "intents" in parsed:
+                    return parsed
+                if "intent" in parsed:
+                    return {"intents": [parsed]}
             except json.JSONDecodeError:
                 pass
 
-        # Last resort: treat the entire message as a chat
-        return {"intent": "chat", "params": {"message": full_text}}
+        return {"intents": [{"intent": "chat", "params": {"message": full_text}}]}
 
 
 class EVALUATOR:
@@ -149,15 +163,22 @@ class EVALUATOR:
 
     @staticmethod
     def validate_intent(intent_dict: dict) -> tuple[bool, str]:
-        """Check that the SUPERVISOR returned a well-formed intent dict."""
+        """Check that the SUPERVISOR returned a well-formed intents dict."""
         if not isinstance(intent_dict, dict):
             return False, "Response is not a dict"
-        if "intent" not in intent_dict:
-            return False, "Missing 'intent' key"
-        if intent_dict["intent"] not in EVALUATOR.VALID_INTENTS:
-            return False, f"Unknown intent: '{intent_dict['intent']}'"
-        if "params" not in intent_dict:
-            return False, "Missing 'params' key"
+        if "intents" not in intent_dict:
+            return False, "Missing 'intents' key"
+        if not isinstance(intent_dict["intents"], list):
+            return False, "'intents' must be a list"
+        
+        for item in intent_dict["intents"]:
+            if "intent" not in item:
+                return False, "Item missing 'intent' key"
+            if item["intent"] not in EVALUATOR.VALID_INTENTS:
+                return False, f"Unknown intent: '{item['intent']}'"
+            if "params" not in item:
+                return False, "Item missing 'params' key"
+        
         return True, "OK"
 
     @staticmethod
