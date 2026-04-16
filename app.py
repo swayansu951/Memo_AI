@@ -146,6 +146,8 @@ if "pipeline_result" not in st.session_state:
     st.session_state.pipeline_result = None     # last run's full output
 if "pending_confirmation" not in st.session_state:
     st.session_state.pending_confirmation = False
+if "metrics" not in st.session_state:
+    st.session_state.metrics = {"stt": 0.0, "intent": 0.0, "tool": 0.0}
 
 memory: SessionMemory = st.session_state.memory
 
@@ -191,7 +193,9 @@ def execute_tool_action(bundle, agent_model, memory):
         pass 
     else:
         with st.status(f"⚙️ Executing {intent}…", expanded=True) as s:
+            start_tool = time.time()
             tool_result = agents.run(intent, params)
+            st.session_state.metrics["tool"] = time.time() - start_tool
             bundle["result"] = tool_result
             s.update(
                 label=f"{'✅' if tool_result['status']=='success' else '❌'} {tool_result['message']}",
@@ -222,6 +226,7 @@ def run_pipeline(audio_bytes: bytes, sup_model: str, agent_model: str, human_con
 
     try:
         # 2. STT
+        start_stt = time.time()
         with st.status("🎙️ Transcribing audio...", expanded=True) as s:
             stt: STTEngine = load_stt_engine(st.session_state.whisper_model_path)
             segments, info = stt.transcribe(tmp_path)
@@ -242,6 +247,7 @@ def run_pipeline(audio_bytes: bytes, sup_model: str, agent_model: str, human_con
                 status_text.write(f"Transcribed: {processed_time:.1f}s / {duration:.1f}s")
             
             transcription = transcription.strip()
+            st.session_state.metrics["stt"] = time.time() - start_stt
             s.update(label=f"✅ Transcribed — {len(transcription)} chars", state="complete")
 
         result_bundle["transcription"] = transcription
@@ -250,12 +256,14 @@ def run_pipeline(audio_bytes: bytes, sup_model: str, agent_model: str, human_con
             return
 
         # 3. Intent Classification
+        start_intent = time.time()
         with st.status("🧠 Classifying intent…", expanded=False) as s:
             supervisor   = SUPERVISOR(transcription)
             intent_dict  = supervisor.classify(model=sup_model)
             valid, msg   = EVALUATOR.validate_intent(intent_dict)
             if not valid:
                 intent_dict = {"intent": "chat", "params": {"message": transcription}}
+            st.session_state.metrics["intent"] = time.time() - start_intent
             s.update(label=f"✅ Intent: {intent_dict['intent']}", state="complete")
 
         intent = intent_dict["intent"]
@@ -271,6 +279,7 @@ def run_pipeline(audio_bytes: bytes, sup_model: str, agent_model: str, human_con
 
         # 5. Tool Execution (Directly if no confirmation needed or if it's chat)
         if intent == "chat":
+            start_tool = time.time()
             with st.status("💬 Generating response…", expanded=True) as s:
                 agents = AGENTS(model=agent_model)
                 history = memory.get_history()
@@ -287,6 +296,7 @@ def run_pipeline(audio_bytes: bytes, sup_model: str, agent_model: str, human_con
                 result_bundle["result"] = {"status": "success", "action": "chat", "reply": full_reply}
                 memory.add_user_message(transcription)
                 memory.add_assistant_message(full_reply)
+                st.session_state.metrics["tool"] = time.time() - start_tool
                 s.update(label="✅ Response ready", state="complete")
             
             memory.log_action(
@@ -357,9 +367,24 @@ with st.sidebar:
     if st.button("🗑️ Clear Session", use_container_width=True):
         memory.clear_all()
         st.session_state.pipeline_result = None
+        st.session_state.metrics = {"stt": 0.0, "intent": 0.0, "tool": 0.0}
         st.success("Session cleared.")
         time.sleep(0.5)
         st.rerun()
+
+    st.divider()
+    st.markdown("**📊 Model Benchmark**")
+    m = st.session_state.metrics
+    st.markdown(
+        f'<div style="font-size: .85rem; color: #94a3b8; line-height: 1.6;">'
+        f'🎙️ STT: <span style="color:#60a5fa; float:right;">{m["stt"]:.2f}s</span><br>'
+        f'🧠 Intent ({st.session_state.sup_model}): <span style="color:#c084fc; float:right;">{m["intent"]:.2f}s</span><br>'
+        f'⚙️ Tool ({st.session_state.agent_model}): <span style="color:#34d399; float:right;">{m["tool"]:.2f}s</span><br>'
+        f'<hr style="margin: .5rem 0; border-color: rgba(255,255,255,0.05);">'
+        f'<b>Total: <span style="color:#f1f5f9; float:right;">{sum(m.values()):.2f}s</span></b>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
 
     st.divider()
     st.markdown(
