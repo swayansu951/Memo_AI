@@ -287,10 +287,10 @@ with st.sidebar:
     sup_model = st.selectbox(
         label="sup_model",
         options=[
-            "llama3.1:8b-instruct-q5_K_S",
-            "llama3:latest",
-            "mistral:latest",
-            "phi3:mini",
+            "llama-3.1-8b-instant",
+            "llama3-8b-8192",
+            "mixtral-8x7b-32768",
+            "llama3-70b-8192",
         ],
         label_visibility="collapsed",
         key="sup_model",
@@ -300,10 +300,11 @@ with st.sidebar:
     agent_model = st.selectbox(
         label="agent_model",
         options=[
-            "llama3.2:3b",
-            "llama3:latest",
-            "mistral:latest",
-            "codellama:latest",
+            "llama3.2:3b"
+            "llama3-8b-8192",
+            "llama3-70b-8192",
+            "mixtral-8x7b-32768",
+            "llama-3.1-8b-instant",
         ],
         label_visibility="collapsed",
         key="agent_model",
