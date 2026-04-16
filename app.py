@@ -184,9 +184,27 @@ def run_pipeline(audio_bytes: bytes, sup_model: str, agent_model: str, human_con
 
     try:
         # 2. STT
-        with st.status("🎙️ Transcribing audio…", expanded=False) as s:
+        with st.status("🎙️ Transcribing audio...", expanded=True) as s:
             stt: STTEngine = load_stt_engine(st.session_state.whisper_model_path)
-            transcription  = stt.transcribe(tmp_path)
+            segments, info = stt.transcribe(tmp_path)
+            
+            transcription = ""
+            progress_bar = st.progress(0.0)
+            status_text = st.empty()
+            
+            # Duration is in seconds
+            duration = info.duration
+            processed_time = 0
+            
+            for segment in segments:
+                transcription += segment.text + " "
+                processed_time = segment.end
+                if duration > 0:
+                    pct = min(processed_time / duration, 1.0)
+                    progress_bar.progress(pct)
+                status_text.write(f"Transcribed: {processed_time:.1f}s / {duration:.1f}s")
+            
+            transcription = transcription.strip()
             s.update(label=f"✅ Transcribed — {len(transcription)} chars", state="complete")
 
         result_bundle["transcription"] = transcription
@@ -278,9 +296,10 @@ with st.sidebar:
     st.markdown("**Whisper Model Path**")
     whisper_path = st.text_input(
         label="whisper_path",
-        value="base",
+        value="./whisper_model",  # Default to local folder
         label_visibility="collapsed",
         key="whisper_model_path",
+        help="Use 'base', 'small' or a path to a local CTranslate2 model directory."
     )
 
     st.markdown("**Supervisor LLM**")
