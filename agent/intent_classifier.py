@@ -67,8 +67,8 @@ If there are multiple tasks (e.g., "Summarize this text and save it to a file"),
 CRITICAL INSTRUCTION: You are ONLY a classifier. DO NOT answer the user's prompt. DO NOT execute their task. DO NOT write code. Your ONLY objective is to output a JSON object describing their intent.
 
 Available intents:
-- "create_file"  → user wants to create a text file / folder
-- "write_code"   → user wants code generated and saved to a file
+- "create_file"  → user wants to create a text file / folder (use ONLY for generic text, not code)
+- "write_code"   → user wants code generated and saved to a file (DO NOT use "create_file" alongside this. "write_code" saves the file automatically!)
 - "summarize"    → user wants content or text summarized
 - "chat"         → general question or conversation
 
