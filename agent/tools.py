@@ -20,9 +20,17 @@ def _safe_path(filename: str) -> Path:
     
     Raises ValueError on path-traversal attempts (e.g. '../../etc/passwd').
     """
+    if not filename or not filename.strip() or filename.strip(".") == "":
+        raise ValueError("Invalid filename provided.")
+    
     target = (OUTPUT_DIR / filename).resolve()
     if not str(target).startswith(str(OUTPUT_DIR.resolve())):
         raise ValueError(f"Path traversal blocked: '{filename}'")
+    
+    # Block writing to the root output/ directory itself
+    if target == OUTPUT_DIR.resolve():
+        raise ValueError("Cannot write directly to the output folder as a file.")
+        
     return target
 
 

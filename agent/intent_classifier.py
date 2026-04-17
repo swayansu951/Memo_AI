@@ -86,10 +86,10 @@ JSON schema:
 }
 
 Params per intent:
-- create_file : {"filename": "...", "content": "..."}
-- write_code  : {"filename": "...", "description": "..."}
-- summarize   : {"text": "..."}
-- chat        : {"message": "..."}
+- create_file : {"filename": "<name_of_file>", "content": "<content_to_save>"}
+- write_code  : {"filename": "<name_for_script.py>", "description": "<what_code_should_do>"}
+- summarize   : {"text": "<text_to_summarize>"}
+- chat        : {"message": "<user_message>"}
 
 Examples:
 User: "Summarize this: [...] and save it to results.txt"
