@@ -31,14 +31,30 @@ def chat_complete(
                         yield chunk["message"]["content"]
                 except httpx.ConnectError:
                     yield error_msg
+                except ollama.ResponseError as e:
+                    yield f"⚠️ **Ollama Error:** {str(e)}"
+                except Exception as e:
+                    yield f"⚠️ **Unexpected Error:** {str(e)}"
             return _stream_gen()
         except httpx.ConnectError:
             def _error_gen():
                 yield error_msg
             return _error_gen()
+        except ollama.ResponseError as e:
+            def _error_gen2():
+                yield f"⚠️ **Ollama Error:** {str(e)}"
+            return _error_gen2()
+        except Exception as e:
+            def _error_gen3():
+                yield f"⚠️ **Unexpected Error:** {str(e)}"
+            return _error_gen3()
     else:
         try:
             response = ollama.chat(**kwargs)
             return {"content": response["message"]["content"]}
         except httpx.ConnectError:
             return {"content": error_msg}
+        except ollama.ResponseError as e:
+            return {"content": f"⚠️ **Ollama Error:** {str(e)}"}
+        except Exception as e:
+            return {"content": f"⚠️ **Unexpected Error:** {str(e)}"}
