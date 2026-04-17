@@ -130,6 +130,41 @@ html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
     align-items: center;
     gap: .5rem;
 }
+
+/* ---------- custom tabs (radio override) ---------- */
+div[data-testid="stRadio"] > div {
+    flex-direction: row;
+    background: rgba(255,255,255,0.03);
+    padding: 4px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.05);
+    margin-bottom: 1.5rem;
+}
+div[data-testid="stRadio"] label {
+    background: transparent;
+    border: none;
+    padding: 6px 16px;
+    border-radius: 8px;
+    color: #94a3b8;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+div[data-testid="stRadio"] label[data-checked="true"] {
+    background: #6366f1;
+    color: white;
+    font-weight: 600;
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+}
+div[data-testid="stRadio"] label div[data-testid="stMarkdownContainer"] p {
+    font-size: 0.88rem;
+}
+/* hide the radio circle */
+div[data-testid="stRadio"] label span[data-testid="stWidgetLabel"] {
+    display: none;
+}
+div[data-testid="stRadio"] div[role="radiogroup"] > label > div:first-child {
+    display: none;
+}
 </style>
 """,
     unsafe_allow_html=True,
@@ -148,6 +183,8 @@ if "pending_confirmation" not in st.session_state:
     st.session_state.pending_confirmation = False
 if "metrics" not in st.session_state:
     st.session_state.metrics = {"stt": 0.0, "intent": 0.0, "tool": 0.0}
+if "active_tab" not in st.session_state:
+    st.session_state.active_tab = "🎙️ Audio Input"
 
 memory: SessionMemory = st.session_state.memory
 
@@ -383,6 +420,7 @@ with st.sidebar:
     human_confirm = st.toggle(
         "🔒 Human-in-the-Loop",
         value=True,
+        key="human_in_the_loop_toggle",
         help="Ask for confirmation before creating/writing files.",
     )
 
@@ -425,10 +463,31 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-tab_input, tab_result, tab_log = st.tabs(["🎙️ Audio Input", "📊 Results", "📋 Action Log"])
+# ── Global Notification for Pending Action ──────────────────────────────────
+if st.session_state.pending_confirmation:
+    st.warning(
+        "🔒 **Action Required:** The agent is waiting for your approval in the **Results** tab.",
+        icon="⚠️"
+    )
 
-# ── Tab 1: Audio Input ─────────────────────────────────────────────────────
-with tab_input:
+# ── Dynamic Tab Navigation ──────────────────────────────────────────────────
+tabs = ["🎙️ Audio Input", "📊 Results", "📋 Action Log"]
+
+# To allow programmatic switching, we use a radio button styled as a tab bar
+# We use st.session_state.active_tab to control which one is selected
+tab_select = st.radio(
+    label="Navigation",
+    options=tabs,
+    index=tabs.index(st.session_state.active_tab),
+    key="active_tab_radio",
+    horizontal=True,
+    label_visibility="collapsed",
+)
+st.session_state.active_tab = tab_select
+active_tab = st.session_state.active_tab
+
+# ── Tab Content ─────────────────────────────────────────────────────────────
+if active_tab == "🎙️ Audio Input":
     col_mic, col_file = st.columns([1, 1], gap="large")
 
     with col_mic:
@@ -472,18 +531,16 @@ with tab_input:
     )
 
     if btn_run and audio_source:
-        with tab_result:
-            run_pipeline(
-                audio_bytes=audio_source,
-                sup_model=st.session_state.sup_model,
-                agent_model=st.session_state.agent_model,
-                human_confirm=human_confirm,
-            )
-        # Switch to results tab
+        st.session_state.active_tab = "📊 Results"
+        run_pipeline(
+            audio_bytes=audio_source,
+            sup_model=st.session_state.sup_model,
+            agent_model=st.session_state.agent_model,
+            human_confirm=human_confirm,
+        )
         st.rerun()
 
-# ── Tab 2: Results ─────────────────────────────────────────────────────────
-with tab_result:
+elif active_tab == "📊 Results":
     pr = st.session_state.pipeline_result
 
     if pr is None:
@@ -563,8 +620,7 @@ with tab_result:
                 st.session_state.pipeline_result = None
                 st.rerun()
 
-# ── Tab 3: Action Log ──────────────────────────────────────────────────────
-with tab_log:
+elif active_tab == "📋 Action Log":
     log = memory.get_log()
     if not log:
         st.markdown(

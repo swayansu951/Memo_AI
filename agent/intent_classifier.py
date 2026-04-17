@@ -2,6 +2,7 @@ import ollama
 import json
 import re
 from typing import Generator
+from agent.llm_client import chat_complete
 
 
 class AGENTS:
@@ -113,14 +114,12 @@ User: "What is AI?"
 
     def main_agent(self, model: str = 'llama3.1:8b-instruct-q5_K_S') -> Generator:
         """Raw streaming generator — yields text chunks from the LLM."""
-        response = ollama.chat(
+        return chat_complete(
             model=model,
-            stream=True,
-            options={"num_ctx": 4097,"num_gpu": 0, "num_thread": 8, "keep_alive": 30},
             messages=self.message,
+            stream=True,
+            options={"num_ctx": 4097, "num_thread": 8, "keep_alive": "2m"}
         )
-        for chunk in response:
-            yield chunk["message"]["content"]
 
     def classify(self, model: str = 'llama3.1:8b-instruct-q5_K_S') -> dict:
         """Collect the full streamed response and parse it as a JSON intent dict.
@@ -135,9 +134,13 @@ User: "What is AI?"
         try:
             parsed = json.loads(cleaned)
             if "intents" in parsed:
+                # Normalize intents
+                for item in parsed["intents"]:
+                    item["intent"] = item["intent"].lower().replace(" ", "_").strip()
                 return parsed
             # Handle legacy single-intent format just in case
             if "intent" in parsed:
+                parsed["intent"] = parsed["intent"].lower().replace(" ", "_").strip()
                 return {"intents": [parsed]}
         except json.JSONDecodeError:
             pass
@@ -147,8 +150,11 @@ User: "What is AI?"
             try:
                 parsed = json.loads(match.group())
                 if "intents" in parsed:
+                    for item in parsed["intents"]:
+                        item["intent"] = item["intent"].lower().replace(" ", "_").strip()
                     return parsed
                 if "intent" in parsed:
+                    parsed["intent"] = parsed["intent"].lower().replace(" ", "_").strip()
                     return {"intents": [parsed]}
             except json.JSONDecodeError:
                 pass

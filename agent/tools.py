@@ -8,6 +8,7 @@ import ollama
 import re
 from pathlib import Path
 from typing import Generator
+from agent.llm_client import chat_complete
 
 # ── Safety Sandbox ─────────────────────────────────────────────────────────────
 OUTPUT_DIR = Path(__file__).resolve().parent.parent / "output"
@@ -72,12 +73,12 @@ def write_code(
             f"{description}\n\n"
             f"Return ONLY the code — no explanation, no markdown fences."
         )
-        response = ollama.chat(
+        response = chat_complete(
             model=model,
             messages=[{"role": "user", "content": prompt}],
             options={"num_ctx": 4097, "num_thread": 4, "keep_alive": "2m"},
         )
-        code = response["message"]["content"].strip()
+        code = response["content"].strip()
 
         # Strip markdown fences if the LLM added them anyway
         code = re.sub(r'^```[\w]*\n?', '', code, flags=re.MULTILINE)
@@ -120,7 +121,7 @@ def summarize(text: str, model: str = 'llama3.2:3b') -> dict:
                 "action":  "summarize",
                 "message": "No text provided to summarize.",
             }
-        response = ollama.chat(
+        response = chat_complete(
             model=model,
             messages=[
                 {
@@ -131,7 +132,7 @@ def summarize(text: str, model: str = 'llama3.2:3b') -> dict:
             ],
             options={"num_ctx": 4097, "num_thread": 4, "keep_alive": "2m"},
         )
-        summary = response["message"]["content"].strip()
+        summary = response["content"].strip()
         return {
             "status":  "success",
             "action":  "summarize",
@@ -164,11 +165,9 @@ def chat(
     messages.extend(history)
     messages.append({"role": "user", "content": message})
 
-    response = ollama.chat(
+    return chat_complete(
         model=model,
         stream=True,
         messages=messages,
         options={"num_ctx": 4097, "num_thread": 4, "keep_alive": "2m"},
     )
-    for chunk in response:
-        yield chunk["message"]["content"]
