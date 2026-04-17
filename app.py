@@ -531,6 +531,7 @@ if active_tab == "🎙️ Audio Input":
     )
 
     if btn_run and audio_source:
+        st.session_state.active_tab_radio = "📊 Results"
         st.session_state.active_tab = "📊 Results"
         run_pipeline(
             audio_bytes=audio_source,
