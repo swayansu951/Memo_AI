@@ -473,17 +473,20 @@ if st.session_state.pending_confirmation:
 # ── Dynamic Tab Navigation ──────────────────────────────────────────────────
 tabs = ["🎙️ Audio Input", "📊 Results", "📋 Action Log"]
 
-# To allow programmatic switching, we use a radio button styled as a tab bar
-# We use st.session_state.active_tab to control which one is selected
+# To allow programmatic switching, we manage the state externally without a forced key.
 tab_select = st.radio(
     label="Navigation",
     options=tabs,
     index=tabs.index(st.session_state.active_tab),
-    key="active_tab_radio",
     horizontal=True,
     label_visibility="collapsed",
 )
-st.session_state.active_tab = tab_select
+
+# Sync radio selection with our manual state indicator
+if tab_select != st.session_state.active_tab:
+    st.session_state.active_tab = tab_select
+    st.rerun()
+
 active_tab = st.session_state.active_tab
 
 # ── Tab Content ─────────────────────────────────────────────────────────────
@@ -531,14 +534,14 @@ if active_tab == "🎙️ Audio Input":
     )
 
     if btn_run and audio_source:
-        st.session_state.active_tab_radio = "📊 Results"
-        st.session_state.active_tab = "📊 Results"
         run_pipeline(
             audio_bytes=audio_source,
             sup_model=st.session_state.sup_model,
             agent_model=st.session_state.agent_model,
             human_confirm=human_confirm,
         )
+        # Shift tab view AFTER background task processes finish
+        st.session_state.active_tab = "📊 Results"
         st.rerun()
 
 elif active_tab == "📊 Results":
